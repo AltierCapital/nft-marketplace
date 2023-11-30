@@ -1,11 +1,10 @@
-"use client";
-
 import { Container } from "@/components/layout/container";
 import { Skeleton } from "@/components/skeleton";
 import { TOAST_CONFIG } from "@/components/toast-config";
 import {
   ETHERSCAN_URL,
   MARKETPLACE_ADDRESS,
+  NETWORK,
   NFT_COLLECTION_ADDRESS,
 } from "@/thirdweb/contract-addresses";
 import { getRandomColor } from "@/utils/get-random-color";
@@ -18,14 +17,13 @@ import {
   useValidDirectListings,
   useValidEnglishAuctions,
 } from "@thirdweb-dev/react";
-import { NFT, SmartContract } from "@thirdweb-dev/sdk";
+import { type NFT, SmartContract, ThirdwebSDK } from "@thirdweb-dev/sdk";
 import { BaseContract } from "ethers";
+import { GetStaticPaths, GetStaticProps } from "next";
 import Link from "next/link";
 import { useState } from "react";
 import toast, { Toaster } from "react-hot-toast";
 import styles from "./token.module.css";
-
-const [randomColor1, randomColor2] = [getRandomColor(), getRandomColor()];
 
 type Props = {
   nft: NFT;
@@ -34,7 +32,9 @@ type Props = {
   >;
 };
 
-export const TokenPageContent = ({ nft, contractMetadata }: Props) => {
+const [randomColor1, randomColor2] = [getRandomColor(), getRandomColor()];
+
+export default function TokenPage({ nft, contractMetadata }: Props) {
   const [bidValue, setBidValue] = useState<string>();
 
   // Connect to marketplace smart contract
@@ -121,7 +121,6 @@ export const TokenPageContent = ({ nft, contractMetadata }: Props) => {
     <>
       <Toaster position="bottom-center" reverseOrder={false} />
       <Container maxWidth="lg">
-        {" "}
         <div className={styles.container}>
           <div className={styles.metadataContainer}>
             <ThirdwebNftMedia
@@ -338,7 +337,7 @@ export const TokenPageContent = ({ nft, contractMetadata }: Props) => {
                     });
                   }}
                   onError={(e) => {
-                    console.log(e);
+                    console.error(e);
                     toast(`Bid failed! Reason: ${e.message}`, {
                       icon: "❌",
                       style: TOAST_CONFIG,
@@ -355,4 +354,54 @@ export const TokenPageContent = ({ nft, contractMetadata }: Props) => {
       </Container>
     </>
   );
+}
+
+export const getStaticProps: GetStaticProps = async (context) => {
+  const tokenId = context.params?.tokenId as string;
+
+  const sdk = new ThirdwebSDK(NETWORK, {
+    secretKey: process.env.TW_SECRET_KEY,
+  });
+
+  const contract = await sdk.getContract(NFT_COLLECTION_ADDRESS);
+
+  const nft = await contract.erc721.get(tokenId);
+
+  let contractMetadata;
+
+  try {
+    contractMetadata = await contract.metadata.get();
+  } catch (e) {}
+
+  return {
+    props: {
+      nft,
+      contractMetadata: contractMetadata || null,
+    },
+    revalidate: 1, // https://nextjs.org/docs/basic-features/data-fetching/incremental-static-regeneration
+  };
+};
+
+export const getStaticPaths: GetStaticPaths = async () => {
+  const sdk = new ThirdwebSDK(NETWORK, {
+    secretKey: process.env.TW_SECRET_KEY,
+  });
+
+  const contract = await sdk.getContract(NFT_COLLECTION_ADDRESS);
+
+  const nfts = await contract.erc721.getAll();
+
+  const paths = nfts.map((nft) => {
+    return {
+      params: {
+        contractAddress: NFT_COLLECTION_ADDRESS,
+        tokenId: nft.metadata.id,
+      },
+    };
+  });
+
+  return {
+    paths,
+    fallback: "blocking", // can also be true or 'blocking'
+  };
 };
